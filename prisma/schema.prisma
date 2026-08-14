@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  pointBalance Int      @default(0)
+  isAdmin      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  bets         Bet[]
+  transactions Transaction[]
+  markets      Market[]      @relation("CreatedBy")
+}
+
+model Market {
+  id               String       @id @default(cuid())
+  title            String
+  description      String
+  type             MarketType
+  line             Float?
+  status           MarketStatus @default(OPEN)
+  resolvedOutcomeId String?
+  closesAt         DateTime?
+  createdAt        DateTime     @default(now())
+
+  createdById String
+  createdBy   User   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  outcomes Outcome[]
+  bets     Bet[]
+}
+
+model Outcome {
+  id        String @id @default(cuid())
+  label     String
+  poolTotal Int    @default(0)
+
+  marketId String
+  market   Market @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  bets Bet[]
+}
+
+model Bet {
+  id             String   @id @default(cuid())
+  amountWagered  Int
+  payoutReceived Int?
+  createdAt      DateTime @default(now())
+
+  userId    String
+  user      User    @relation(fields: [userId], references: [id])
+  marketId  String
+  market    Market  @relation(fields: [marketId], references: [id])
+  outcomeId String
+  outcome   Outcome @relation(fields: [outcomeId], references: [id])
+
+  transactions Transaction[]
+}
+
+model Transaction {
+  id        String          @id @default(cuid())
+  amount    Int
+  type      TransactionType
+  createdAt DateTime        @default(now())
+
+  userId      String
+  user        User   @relation(fields: [userId], references: [id])
+  relatedBetId String?
+  relatedBet   Bet?   @relation(fields: [relatedBetId], references: [id])
+}
+
+enum MarketType {
+  YES_NO
+  OVER_UNDER
+  MULTIPLE_CHOICE
+}
+
+enum MarketStatus {
+  OPEN
+  CLOSED
+  RESOLVED
+}
+
+enum TransactionType {
+  ADMIN_GRANT
+  BET_PLACED
+  PAYOUT_RECEIVED
+}

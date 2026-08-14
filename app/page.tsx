@@ -1,101 +1,100 @@
-import Image from "next/image";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import MarketCard from "@/components/MarketCard";
 
-export default function Home() {
+export default async function Dashboard() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const markets = await prisma.market.findMany({
+    where: { status: "OPEN" },
+    include: { outcomes: true },
+    orderBy: { createdAt: "desc" },
+    take: 6,
+  });
+
+  const leaders = await prisma.user.findMany({
+    select: { id: true, username: true, pointBalance: true },
+    orderBy: { pointBalance: "desc" },
+    take: 5,
+  });
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+    <div className="space-y-8">
+      <div className="bg-gradient-to-br from-indigo-900/40 to-slate-900 border border-indigo-800/40 rounded-2xl p-6">
+        <p className="text-slate-400 text-sm mb-1">Your balance</p>
+        <p className="text-4xl font-bold text-white">
+          {user.pointBalance.toLocaleString()}{" "}
+          <span className="text-indigo-400 text-2xl">pts</span>
+        </p>
+        <p className="text-slate-400 text-sm mt-1">@{user.username}</p>
+      </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Open Markets</h2>
+          <Link href="/markets" className="text-sm text-indigo-400 hover:text-indigo-300">
+            View all →
+          </Link>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+        {markets.length === 0 ? (
+          <p className="text-slate-400 text-sm bg-[#1a1d27] border border-slate-800 rounded-xl p-6 text-center">
+            No open markets yet.{" "}
+            {user.isAdmin && (
+              <Link href="/admin/markets/new" className="text-indigo-400 hover:underline">
+                Create one
+              </Link>
+            )}
+          </p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {markets.map((m) => (
+              <MarketCard key={m.id} market={m} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Leaderboard</h2>
+          <Link href="/leaderboard" className="text-sm text-indigo-400 hover:text-indigo-300">
+            Full board →
+          </Link>
+        </div>
+        <div className="bg-[#1a1d27] border border-slate-800 rounded-xl overflow-hidden">
+          {leaders.map((u, i) => (
+            <div
+              key={u.id}
+              className={`flex items-center gap-3 px-4 py-3 ${i < leaders.length - 1 ? "border-b border-slate-800" : ""}`}
+            >
+              <span
+                className={`text-sm font-bold w-6 text-center ${
+                  i === 0
+                    ? "text-yellow-400"
+                    : i === 1
+                    ? "text-slate-300"
+                    : i === 2
+                    ? "text-amber-600"
+                    : "text-slate-500"
+                }`}
+              >
+                {i + 1}
+              </span>
+              <span
+                className={`flex-1 text-sm ${u.id === user.id ? "text-indigo-400 font-semibold" : "text-slate-200"}`}
+              >
+                @{u.username}
+              </span>
+              <span className="text-sm font-medium text-slate-300">
+                {u.pointBalance.toLocaleString()} pts
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
