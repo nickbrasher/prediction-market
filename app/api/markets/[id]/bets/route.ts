@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 
+class BetError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+  }
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -9,56 +15,64 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id: marketId } = await params;
   const { outcomeId, amount } = await req.json();
 
-  if (!outcomeId || !amount || amount <= 0) {
+  if (!outcomeId || !Number.isInteger(amount) || amount <= 0) {
     return NextResponse.json({ error: "Invalid bet parameters" }, { status: 400 });
   }
 
-  const market = await prisma.market.findUnique({
-    where: { id: marketId },
-    include: { outcomes: true },
-  });
+  try {
+    const bet = await prisma.$transaction(async (tx) => {
+      const market = await tx.market.findUnique({
+        where: { id: marketId },
+        include: { outcomes: true },
+      });
 
-  if (!market) return NextResponse.json({ error: "Market not found" }, { status: 404 });
-  if (market.status !== "OPEN") {
-    return NextResponse.json({ error: "Market is not open for betting" }, { status: 400 });
+      if (!market) throw new BetError("Market not found", 404);
+      if (market.status !== "OPEN") throw new BetError("Market is not open for betting", 400);
+      if (market.closesAt && market.closesAt <= new Date()) {
+        throw new BetError("Market has closed", 400);
+      }
+      if (!market.outcomes.some((o) => o.id === outcomeId)) {
+        throw new BetError("Outcome not found", 404);
+      }
+
+      // Conditional decrement so concurrent bets can't push the balance below zero.
+      const debited = await tx.user.updateMany({
+        where: { id: session.userId, pointBalance: { gte: amount } },
+        data: { pointBalance: { decrement: amount } },
+      });
+      if (debited.count === 0) throw new BetError("Insufficient points", 400);
+
+      const bet = await tx.bet.create({
+        data: {
+          userId: session.userId,
+          marketId,
+          outcomeId,
+          amountWagered: amount,
+        },
+      });
+
+      await tx.outcome.update({
+        where: { id: outcomeId },
+        data: { poolTotal: { increment: amount } },
+      });
+
+      await tx.transaction.create({
+        data: {
+          userId: session.userId,
+          amount: -amount,
+          type: "BET_PLACED",
+          relatedBetId: bet.id,
+        },
+      });
+
+      return bet;
+    });
+
+    return NextResponse.json(bet, { status: 201 });
+  } catch (err) {
+    if (err instanceof BetError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
   }
-
-  const outcome = market.outcomes.find((o) => o.id === outcomeId);
-  if (!outcome) return NextResponse.json({ error: "Outcome not found" }, { status: 404 });
-
-  const user = await prisma.user.findUnique({ where: { id: session.userId } });
-  if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
-  if (user.pointBalance < amount) {
-    return NextResponse.json({ error: "Insufficient points" }, { status: 400 });
-  }
-
-  const [bet] = await prisma.$transaction([
-    prisma.bet.create({
-      data: {
-        userId: session.userId,
-        marketId,
-        outcomeId,
-        amountWagered: amount,
-      },
-    }),
-    prisma.outcome.update({
-      where: { id: outcomeId },
-      data: { poolTotal: { increment: amount } },
-    }),
-    prisma.user.update({
-      where: { id: session.userId },
-      data: { pointBalance: { decrement: amount } },
-    }),
-  ]);
-
-  await prisma.transaction.create({
-    data: {
-      userId: session.userId,
-      amount: -amount,
-      type: "BET_PLACED",
-      relatedBetId: bet.id,
-    },
-  });
-
-  return NextResponse.json(bet, { status: 201 });
 }

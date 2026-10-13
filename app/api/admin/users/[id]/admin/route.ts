@@ -9,6 +9,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const { isAdmin } = await req.json();
 
+  if (typeof isAdmin !== "boolean") {
+    return NextResponse.json({ error: "isAdmin must be a boolean" }, { status: 400 });
+  }
+
   const user = await prisma.user.update({
     where: { id },
     data: { isAdmin },

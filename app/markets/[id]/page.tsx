@@ -93,7 +93,8 @@ export default function MarketDetail() {
   if (!market) return <p className="text-slate-400">Market not found.</p>;
 
   const totalPool = market.outcomes.reduce((s, o) => s + o.poolTotal, 0);
-  const isOpen = market.status === "OPEN";
+  const isOpen =
+    market.status === "OPEN" && (!market.closesAt || new Date(market.closesAt) > new Date());
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">

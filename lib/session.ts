@@ -5,10 +5,16 @@ export interface SessionPayload {
   isAdmin: boolean;
 }
 
-const getSecret = () =>
-  new TextEncoder().encode(
-    process.env.JWT_SECRET ?? "fallback-dev-secret-change-in-production"
-  );
+const getSecret = () => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("JWT_SECRET must be set in production");
+    }
+    return new TextEncoder().encode("dev-only-secret-do-not-use-in-production");
+  }
+  return new TextEncoder().encode(secret);
+};
 
 export async function createSession(payload: SessionPayload): Promise<string> {
   return await new SignJWT({ ...payload })

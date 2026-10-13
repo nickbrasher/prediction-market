@@ -9,7 +9,16 @@ export async function getSession() {
   const cookieStore = await cookies();
   const token = cookieStore.get("session")?.value;
   if (!token) return null;
-  return verifySession(token);
+  const session = await verifySession(token);
+  if (!session) return null;
+
+  // The JWT's isAdmin can be stale (e.g. after a demotion), so read it from the DB.
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true, isAdmin: true },
+  });
+  if (!user) return null;
+  return { userId: user.id, isAdmin: user.isAdmin };
 }
 
 export async function getCurrentUser() {
